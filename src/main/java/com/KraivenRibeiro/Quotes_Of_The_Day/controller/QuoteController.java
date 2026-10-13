@@ -1,40 +1,57 @@
 package com.KraivenRibeiro.Quotes_Of_The_Day.controller;
 
 import com.KraivenRibeiro.Quotes_Of_The_Day.model.Quote;
+import com.KraivenRibeiro.Quotes_Of_The_Day.repository.QuoteRepository;
+import lombok.RequiredArgsConstructor;
+
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.config.Task;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+
 @RestController
 @RequestMapping("/api/quotes")
+@RequiredArgsConstructor
 public class QuoteController {
-
-    private final List<Quote> quotes = new ArrayList<>();
-    private final AtomicLong idCounter = new AtomicLong(1);
+    
+    private final QuoteRepository quoteRepository;
 
     @GetMapping
-    public ResponseEntity<List<Quote>> getAllQuotes() {
-        return ResponseEntity.ok(quotes);
-    }
+    public ResponseEntity<Page<Quote>> getAllQuotes( 
+            @RequestParam(defaultValue = "0") int page,
+             @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "createdAt") String sortBy,
+            @RequestParam(defaultValue = "DESC") String direction) {
+        Sort.Direction sortDirection = direction.equalsIgnoreCase("ASC") ?
+            Sort.Direction.ASC : Sort.Direction.DESC;
+                
+        Pageable pageable = PageRequest.of(page, size, Sort.by(sortDirection, sortBy));
+        Page<Quote> quotes = quoteRepository.findAll(pageable);
 
+        return ResponseEntity.ok(quotes);
+
+} 
+    // Get a quote by ID
     @GetMapping("/{id}")
     public ResponseEntity<Quote> getQuoteById(@PathVariable Long id) {
-        return quotes.stream()
-                .filter(quote -> quote.getId().equals(id))
-                .findFirst()
+        return quoteRepository.findById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
     @PostMapping
     public ResponseEntity<Quote> createQuote(@RequestBody Quote quote) {
-        quote.setId(idCounter.getAndIncrement());
-        quotes.add(quote);
-
+        Quote savedQuote = quoteRepository.save(quote);
+    
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(quote);
@@ -43,29 +60,41 @@ public class QuoteController {
     @PutMapping("/{id}")
     public ResponseEntity<Quote> updateQuote(
             @PathVariable Long id,
-            @RequestBody Quote updatedQuote) {
+            @RequestBody Quote quoteDetails) {
 
-        for (int i = 0; i < quotes.size(); i++) {
-            if (quotes.get(i).getId().equals(id)) {
-                updatedQuote.setId(id);
-                quotes.set(i, updatedQuote);
+                 return quoteRepository.findById(id)
+                .map(quote -> {
+                    quote.setText(quoteDetails.getText());
+                    quote.setAuthor(quoteDetails.getAuthor());
+                    quote.setCategories(quoteDetails.getCategories());
 
-                return ResponseEntity.ok(updatedQuote);
-            }
+                    Quote updatedQuote = quoteRepository.save(quote);
+
+                    return ResponseEntity.ok(updatedQuote);
+                })
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteQuote(@PathVariable Long id) {
+
+        if (quoteRepository.existsById(id)) {
+            quoteRepository.deleteById(id);
+            return ResponseEntity.noContent().build();
         }
 
         return ResponseEntity.notFound().build();
     }
 
-    @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteQuote(@PathVariable Long id) {
+        @GetMapping("/search")
+    public ResponseEntity<List<Quote>> searchQuotes(
+            @RequestParam String text) {
 
-        boolean removed = quotes.removeIf(
-                quote -> quote.getId().equals(id)
-        );
+        List<Quote> quotes =
+                quoteRepository.findByTextContainingIgnoreCase(text);
 
-        return removed
-                ? ResponseEntity.noContent().build()
-                : ResponseEntity.notFound().build();
+        return ResponseEntity.ok(quotes);
     }
 }
+
